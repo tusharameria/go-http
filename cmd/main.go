@@ -2,15 +2,23 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"net"
 	"os"
+	"strings"
 	"sync"
+	"time"
 
 	"github.com/google/uuid"
 )
 
+type ConnectionInfo struct {
+	name *string
+	conn net.Conn
+}
+
 type ConnectionPool struct {
-	conns map[uuid.UUID]net.Conn
+	conns map[uuid.UUID]*ConnectionInfo
 	mu    sync.Mutex
 }
 
@@ -32,7 +40,7 @@ func main() {
 	msgInfoCh := make(chan MessageInfo)
 
 	connPool := &ConnectionPool{
-		conns: make(map[uuid.UUID]net.Conn),
+		conns: make(map[uuid.UUID]*ConnectionInfo),
 		mu:    sync.Mutex{},
 	}
 
@@ -55,6 +63,7 @@ func main() {
 
 		go handleConnection(conn, newID, connPool, msgInfoCh)
 		conn.Write([]byte("Hello from minimal TCP server...\n"))
+		conn.Write([]byte("Please enter you name\n"))
 	}
 }
 
@@ -63,17 +72,46 @@ func handleConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msg
 
 	buff := make([]byte, 1024)
 	for {
-		n, err := conn.Read(buff)
-		if err != nil {
-			fmt.Printf("%s\n", err)
+		if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+			fmt.Printf("Error : %s", err)
 			return
 		}
-		fmt.Printf("Received from Client %s\n", id.String())
-		fmt.Printf("Message : %s", buff[:n])
-		msgInfoCh <- MessageInfo{
-			id:  id,
-			msg: string(buff[:n]),
+		n, err := conn.Read(buff)
+		if err != nil {
+			if err == io.EOF {
+				fmt.Printf("Client %s disconnected\n", id.String())
+			} else {
+				if ne, ok := err.(net.Error); ok && ne.Timeout() {
+					fmt.Printf("Client %s timed out\n", id.String())
+					conn.Write([]byte("You have been timed out due to inactivity.\n"))
+					return
+				}
+				fmt.Printf("Read error: %s\n", err)
+			}
+			return
 		}
+
+		msg := string(buff[:n])
+
+		fmt.Printf("Received from Client %s\n", id.String())
+		fmt.Printf("Message : %s", msg)
+
+		if msg == "\n" {
+			conn.Write([]byte(fmt.Sprintln("Please enter a valid name!!!")))
+			continue
+		}
+
+		connPool.mu.Lock()
+		if connPool.conns[id].name != nil {
+			msgInfoCh <- MessageInfo{
+				id:  id,
+				msg: msg,
+			}
+		} else {
+			name := strings.TrimSpace(msg)
+			connPool.conns[id].name = &name
+		}
+		connPool.mu.Unlock()
 	}
 }
 
@@ -87,7 +125,10 @@ func addToConnections(conn net.Conn, connPool *ConnectionPool) uuid.UUID {
 	defer connPool.mu.Unlock()
 
 	id := uuid.New()
-	connPool.conns[id] = conn
+	connPool.conns[id] = &ConnectionInfo{
+		name: nil,
+		conn: conn,
+	}
 	return id
 }
 
@@ -96,7 +137,7 @@ func removeFromConnections(id uuid.UUID, connPool *ConnectionPool) {
 	defer connPool.mu.Unlock()
 
 	delete(connPool.conns, id)
-	fmt.Printf("Closing Connections : %s\n", id.String())
+	fmt.Printf("Closing Connection : %s\n", id.String())
 	fmt.Printf("Active Connections : %d\n", len(connPool.conns))
 }
 
@@ -104,9 +145,9 @@ func broadcast(msg string, senderID uuid.UUID, connPool *ConnectionPool) {
 	connPool.mu.Lock()
 	defer connPool.mu.Unlock()
 
-	for id, conn := range connPool.conns {
-		if id != senderID {
-			conn.Write([]byte(fmt.Sprintf("Client %s : %s", senderID.String(), msg)))
+	for id, connInfo := range connPool.conns {
+		if id != senderID && connInfo.name != nil {
+			connInfo.conn.Write([]byte(fmt.Sprintf("%s : %s", *connPool.conns[senderID].name, msg)))
 		}
 	}
 }
