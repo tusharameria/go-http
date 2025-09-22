@@ -4,8 +4,20 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"sync/atomic"
+	"sync"
+
+	"github.com/google/uuid"
 )
+
+type ConnectionPool struct {
+	conns map[uuid.UUID]net.Conn
+	mu    sync.Mutex
+}
+
+type MessageInfo struct {
+	id  uuid.UUID
+	msg string
+}
 
 func main() {
 	listener, err := net.Listen("tcp", "127.0.0.1:8082")
@@ -17,7 +29,18 @@ func main() {
 	fmt.Printf("Listener Speifications : %+v\n", listener)
 	fmt.Printf("Listener Address : %+v\n", listener.Addr())
 
-	var connCount int64 = 0
+	msgInfoCh := make(chan MessageInfo)
+
+	connPool := &ConnectionPool{
+		conns: make(map[uuid.UUID]net.Conn),
+		mu:    sync.Mutex{},
+	}
+
+	go func() {
+		for msgInfo := range msgInfoCh {
+			broadcast(msgInfo.msg, msgInfo.id, connPool)
+		}
+	}()
 
 	for {
 		conn, err := listener.Accept()
@@ -25,36 +48,65 @@ func main() {
 			fmt.Printf("%s\n", err)
 			continue
 		}
-		atomic.AddInt64(&connCount, 1)
+		newID := addToConnections(conn, connPool)
 		fmt.Println("New Client Connected...")
 		fmt.Printf("Local address : %+v\n", conn.LocalAddr())
-		fmt.Printf("Active Connections : %d\n", connCount)
+		fmt.Printf("Active Connections : %d\n", len(connPool.conns))
 
-		go handleConnection(conn, &connCount)
+		go handleConnection(conn, newID, connPool, msgInfoCh)
 		conn.Write([]byte("Hello from minimal TCP server...\n"))
 	}
 }
 
-func handleConnection(conn net.Conn, connCount *int64) {
-	defer closeConnection(conn, connCount)
+func handleConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msgInfoCh chan<- MessageInfo) {
+	defer closeConnection(conn, id, connPool)
 
 	buff := make([]byte, 1024)
-	num := *connCount
 	for {
 		n, err := conn.Read(buff)
 		if err != nil {
 			fmt.Printf("%s\n", err)
 			return
 		}
-		fmt.Printf("Received from Client %d\n", num)
+		fmt.Printf("Received from Client %s\n", id.String())
 		fmt.Printf("Message : %s", buff[:n])
-
-		conn.Write([]byte(fmt.Sprintf("You sent : %s", buff[:n])))
+		msgInfoCh <- MessageInfo{
+			id:  id,
+			msg: string(buff[:n]),
+		}
 	}
 }
 
-func closeConnection(conn net.Conn, connCount *int64) {
-	newVal := atomic.AddInt64(connCount, -1)
-	fmt.Printf("Active Connections after closing connection : %d\n", newVal)
+func closeConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool) {
 	conn.Close()
+	removeFromConnections(id, connPool)
+}
+
+func addToConnections(conn net.Conn, connPool *ConnectionPool) uuid.UUID {
+	connPool.mu.Lock()
+	defer connPool.mu.Unlock()
+
+	id := uuid.New()
+	connPool.conns[id] = conn
+	return id
+}
+
+func removeFromConnections(id uuid.UUID, connPool *ConnectionPool) {
+	connPool.mu.Lock()
+	defer connPool.mu.Unlock()
+
+	delete(connPool.conns, id)
+	fmt.Printf("Closing Connections : %s\n", id.String())
+	fmt.Printf("Active Connections : %d\n", len(connPool.conns))
+}
+
+func broadcast(msg string, senderID uuid.UUID, connPool *ConnectionPool) {
+	connPool.mu.Lock()
+	defer connPool.mu.Unlock()
+
+	for id, conn := range connPool.conns {
+		if id != senderID {
+			conn.Write([]byte(fmt.Sprintf("Client %s : %s", senderID.String(), msg)))
+		}
+	}
 }
