@@ -13,3 +13,19 @@ go run cmd/main.go
 ```bash
 nc 127.0.0.1 8082
 ```
+
+## Mini Protocol
+
+```
+<TYPE> <PAYLOAD>\n
+```
+
+```
+<TYPE> = ["JOIN", "NAME, "MSG"]
+```
+
+### eg
+
+```
+JOIN Tushar
+```

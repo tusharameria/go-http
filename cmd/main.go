@@ -1,15 +1,23 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net"
 	"os"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/google/uuid"
+)
+
+type PayloadType string
+
+const (
+	JOIN PayloadType = "JOIN"
+	NAME PayloadType = "NAME"
+	MSG  PayloadType = "MSG"
 )
 
 type ConnectionInfo struct {
@@ -34,7 +42,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Printf("Listener Speifications : %+v\n", listener)
 	fmt.Printf("Listener Address : %+v\n", listener.Addr())
 
 	msgInfoCh := make(chan MessageInfo)
@@ -70,13 +77,14 @@ func main() {
 func handleConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msgInfoCh chan<- MessageInfo) {
 	defer closeConnection(conn, id, connPool)
 
-	buff := make([]byte, 1024)
 	for {
-		if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
-			fmt.Printf("Error : %s", err)
-			return
-		}
-		n, err := conn.Read(buff)
+		// if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
+		// 	fmt.Printf("Error : %s", err)
+		// 	return
+		// }
+
+		reader := bufio.NewReader(conn)
+		line, err := reader.ReadString('\n')
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Client %s disconnected\n", id.String())
@@ -91,25 +99,54 @@ func handleConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msg
 			return
 		}
 
-		msg := string(buff[:n])
-
-		fmt.Printf("Received from Client %s\n", id.String())
-		fmt.Printf("Message : %s", msg)
-
-		if msg == "\n" {
-			conn.Write([]byte(fmt.Sprintln("Please enter a valid name!!!")))
+		line = strings.TrimSuffix(line, "\n")
+		line = strings.TrimSuffix(line, "\r")
+		parts := strings.SplitN(line, " ", 2)
+		if len(parts) != 2 {
+			conn.Write([]byte(fmt.Sprintln("Invalid call")))
 			continue
 		}
+		callType := parts[0]
+		callPayload := parts[1]
+
+		fmt.Printf("Received from Client %s\n", id.String())
+		fmt.Printf("Message : %s\n", callPayload)
 
 		connPool.mu.Lock()
-		if connPool.conns[id].name != nil {
-			msgInfoCh <- MessageInfo{
-				id:  id,
-				msg: msg,
+		switch PayloadType(callType) {
+		case JOIN:
+			if connPool.conns[id].name == nil {
+				if strings.TrimSpace(callPayload) == "" {
+					conn.Write([]byte(fmt.Sprintln("Please enter a valid name!!!")))
+					continue
+				}
+				name := strings.TrimSpace(callPayload)
+				connPool.conns[id].name = &name
 			}
-		} else {
-			name := strings.TrimSpace(msg)
-			connPool.conns[id].name = &name
+		case NAME:
+			if connPool.conns[id].name == nil {
+				conn.Write([]byte(fmt.Sprintln("Join the chatroom first!!!")))
+				conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
+			} else {
+				if strings.TrimSpace(callPayload) == "" {
+					conn.Write([]byte(fmt.Sprintln("Please enter a valid name!!!")))
+					continue
+				}
+				name := strings.TrimSpace(callPayload)
+				connPool.conns[id].name = &name
+			}
+		case MSG:
+			if connPool.conns[id].name == nil {
+				conn.Write([]byte(fmt.Sprintln("Join the chatroom first!!!")))
+				conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
+			} else {
+				msgInfoCh <- MessageInfo{
+					id:  id,
+					msg: fmt.Sprintln(callPayload),
+				}
+			}
+		default:
+			conn.Write([]byte(fmt.Sprintln("Invalid call")))
 		}
 		connPool.mu.Unlock()
 	}
