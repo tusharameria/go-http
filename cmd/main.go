@@ -70,7 +70,8 @@ func main() {
 
 		go handleConnection(conn, newID, connPool, msgInfoCh)
 		conn.Write([]byte("Hello from minimal TCP server...\n"))
-		conn.Write([]byte("Please enter you name\n"))
+		conn.Write([]byte("Please join the the chatroom before sending messgaes\n"))
+		conn.Write([]byte("JOIN <Your Name>\n"))
 	}
 }
 
@@ -102,8 +103,16 @@ func handleConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msg
 		line = strings.TrimSuffix(line, "\n")
 		line = strings.TrimSuffix(line, "\r")
 		parts := strings.SplitN(line, " ", 2)
+
+		if line == "" || len(parts) == 0 {
+			continue
+		}
 		if len(parts) != 2 {
-			conn.Write([]byte(fmt.Sprintln("Invalid call")))
+			conn.Write([]byte(fmt.Sprintln("Invalid call!!!")))
+			conn.Write([]byte(fmt.Sprintln("Here's the list of valid calls :")))
+			conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
+			conn.Write([]byte(fmt.Sprintln("NAME <New Name>")))
+			conn.Write([]byte(fmt.Sprintln("MSG <Your Message>")))
 			continue
 		}
 		callType := parts[0]
@@ -146,7 +155,11 @@ func handleConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msg
 				}
 			}
 		default:
-			conn.Write([]byte(fmt.Sprintln("Invalid call")))
+			conn.Write([]byte(fmt.Sprintln("Invalid call!!!")))
+			conn.Write([]byte(fmt.Sprintln("Here's the list of valid calls :")))
+			conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
+			conn.Write([]byte(fmt.Sprintln("NAME <New Name>")))
+			conn.Write([]byte(fmt.Sprintln("MSG <Your Message>")))
 		}
 		connPool.mu.Unlock()
 	}
