@@ -1,7 +1,7 @@
 package main
 
 import (
-	"bufio"
+	"bytes"
 	"fmt"
 	"io"
 	"net"
@@ -78,14 +78,14 @@ func main() {
 func handleConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msgInfoCh chan<- MessageInfo) {
 	defer closeConnection(conn, id, connPool)
 
+	buff := make([]byte, 8)
+	var tmp bytes.Buffer
 	for {
 		// if err := conn.SetReadDeadline(time.Now().Add(10 * time.Second)); err != nil {
 		// 	fmt.Printf("Error : %s", err)
 		// 	return
 		// }
-
-		reader := bufio.NewReader(conn)
-		line, err := reader.ReadString('\n')
+		n, err := conn.Read(buff)
 		if err != nil {
 			if err == io.EOF {
 				fmt.Printf("Client %s disconnected\n", id.String())
@@ -100,69 +100,90 @@ func handleConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msg
 			return
 		}
 
-		line = strings.TrimSuffix(line, "\n")
-		line = strings.TrimSuffix(line, "\r")
-		parts := strings.SplitN(line, " ", 2)
+		tmp.Write(buff[:n])
 
-		if line == "" || len(parts) == 0 {
-			continue
-		}
-		if len(parts) != 2 {
-			conn.Write([]byte(fmt.Sprintln("Invalid call!!!")))
-			conn.Write([]byte(fmt.Sprintln("Here's the list of valid calls :")))
-			conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
-			conn.Write([]byte(fmt.Sprintln("NAME <New Name>")))
-			conn.Write([]byte(fmt.Sprintln("MSG <Your Message>")))
-			continue
-		}
-		callType := parts[0]
-		callPayload := parts[1]
+		for {
+			data := tmp.Bytes()
+			idx := strings.IndexByte(string(data), '\n')
+			if idx == -1 {
+				break
+			}
+			line := string(data[:idx])
+			tmp.Next(idx + 1)
 
-		fmt.Printf("Received from Client %s\n", id.String())
-		fmt.Printf("Message : %s\n", callPayload)
-
-		connPool.mu.Lock()
-		switch PayloadType(callType) {
-		case JOIN:
-			if connPool.conns[id].name == nil {
-				if strings.TrimSpace(callPayload) == "" {
-					conn.Write([]byte(fmt.Sprintln("Please enter a valid name!!!")))
-					continue
-				}
-				name := strings.TrimSpace(callPayload)
-				connPool.conns[id].name = &name
+			if valid := validateProtocol(line, conn, id, connPool, msgInfoCh); !valid {
+				fmt.Printf("Error validating protocol: %s\n", err)
+				continue
 			}
-		case NAME:
-			if connPool.conns[id].name == nil {
-				conn.Write([]byte(fmt.Sprintln("Join the chatroom first!!!")))
-				conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
-			} else {
-				if strings.TrimSpace(callPayload) == "" {
-					conn.Write([]byte(fmt.Sprintln("Please enter a valid name!!!")))
-					continue
-				}
-				name := strings.TrimSpace(callPayload)
-				connPool.conns[id].name = &name
-			}
-		case MSG:
-			if connPool.conns[id].name == nil {
-				conn.Write([]byte(fmt.Sprintln("Join the chatroom first!!!")))
-				conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
-			} else {
-				msgInfoCh <- MessageInfo{
-					id:  id,
-					msg: fmt.Sprintln(callPayload),
-				}
-			}
-		default:
-			conn.Write([]byte(fmt.Sprintln("Invalid call!!!")))
-			conn.Write([]byte(fmt.Sprintln("Here's the list of valid calls :")))
-			conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
-			conn.Write([]byte(fmt.Sprintln("NAME <New Name>")))
-			conn.Write([]byte(fmt.Sprintln("MSG <Your Message>")))
 		}
-		connPool.mu.Unlock()
 	}
+}
+
+func validateProtocol(line string, conn net.Conn, id uuid.UUID, connPool *ConnectionPool, msgInfoCh chan<- MessageInfo) bool {
+	line = strings.TrimSpace(line)
+	line = strings.TrimSuffix(line, "\n")
+	line = strings.TrimSuffix(line, "\r")
+	parts := strings.SplitN(line, " ", 2)
+
+	if line == "" || len(parts) == 0 {
+		return false
+	}
+	if len(parts) != 2 {
+		conn.Write([]byte(fmt.Sprintln("Invalid call!!!")))
+		conn.Write([]byte(fmt.Sprintln("Here's the list of valid calls :")))
+		conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
+		conn.Write([]byte(fmt.Sprintln("NAME <New Name>")))
+		conn.Write([]byte(fmt.Sprintln("MSG <Your Message>")))
+		return false
+	}
+	callType := parts[0]
+	callPayload := parts[1]
+
+	fmt.Printf("Received from Client %s\n", id.String())
+	fmt.Printf("Message : %s\n", callPayload)
+
+	connPool.mu.Lock()
+	switch PayloadType(callType) {
+	case JOIN:
+		if connPool.conns[id].name == nil {
+			if strings.TrimSpace(callPayload) == "" {
+				conn.Write([]byte(fmt.Sprintln("Please enter a valid name!!!")))
+				return false
+			}
+			name := strings.TrimSpace(callPayload)
+			connPool.conns[id].name = &name
+		}
+	case NAME:
+		if connPool.conns[id].name == nil {
+			conn.Write([]byte(fmt.Sprintln("Join the chatroom first!!!")))
+			conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
+		} else {
+			if strings.TrimSpace(callPayload) == "" {
+				conn.Write([]byte(fmt.Sprintln("Please enter a valid name!!!")))
+				return false
+			}
+			name := strings.TrimSpace(callPayload)
+			connPool.conns[id].name = &name
+		}
+	case MSG:
+		if connPool.conns[id].name == nil {
+			conn.Write([]byte(fmt.Sprintln("Join the chatroom first!!!")))
+			conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
+		} else {
+			msgInfoCh <- MessageInfo{
+				id:  id,
+				msg: fmt.Sprintln(callPayload),
+			}
+		}
+	default:
+		conn.Write([]byte(fmt.Sprintln("Invalid call!!!")))
+		conn.Write([]byte(fmt.Sprintln("Here's the list of valid calls :")))
+		conn.Write([]byte(fmt.Sprintln("JOIN <Your Name>")))
+		conn.Write([]byte(fmt.Sprintln("NAME <New Name>")))
+		conn.Write([]byte(fmt.Sprintln("MSG <Your Message>")))
+	}
+	connPool.mu.Unlock()
+	return true
 }
 
 func closeConnection(conn net.Conn, id uuid.UUID, connPool *ConnectionPool) {
