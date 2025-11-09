@@ -16,16 +16,30 @@ nc 127.0.0.1 8082
 
 ## Mini Protocol
 
-```
+```bash
 <TYPE> <PAYLOAD>\n
 ```
 
-```
+```bash
 <TYPE> = ["JOIN", "NAME, "MSG"]
 ```
 
-### eg
+## Example
 
-```
+### Join server
+
+```bash
 JOIN Tushar
+```
+
+### Send Message
+
+```bash
+MGS Hello, this is Tushar
+```
+
+### Change Display Name
+
+```bash
+NAME Ameria
 ```
