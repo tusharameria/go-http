@@ -1,6 +1,7 @@
 package request
 
 import (
+	"fmt"
 	"io"
 	"testing"
 
@@ -36,6 +37,8 @@ func TestRequestLineParse(t *testing.T) {
 		numBytesPerRead: 3,
 	}
 	r, err := RequestFromReader(reader)
+	fmt.Println(r)
+	fmt.Println(err)
 	require.NoError(t, err)
 	require.NotNil(t, r)
 	assert.Equal(t, "GET", r.RequestLine.Method)
