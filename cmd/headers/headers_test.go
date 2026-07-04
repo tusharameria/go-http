@@ -1,7 +1,6 @@
 package headers
 
 import (
-	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -13,7 +12,6 @@ func TestHeaderParse(t *testing.T) {
 	headers := NewHeaders()
 	data := []byte("Host: localhost:42069\r\nFooFoo: barbar  \r\nAnotherField")
 	n, done, err := headers.Parse(data)
-	fmt.Println(n)
 	require.NoError(t, err)
 	require.NotNil(t, headers)
 	assert.Equal(t, "localhost:42069", headers.Get("Host"))
@@ -34,5 +32,13 @@ func TestHeaderParse(t *testing.T) {
 	n, done, err = headers.Parse(data)
 	require.Error(t, err)
 	assert.Equal(t, 0, n)
+	assert.False(t, done)
+
+	headers = NewHeaders()
+	data = []byte("Host: localhost:42069\r\nHost: localhost:42068  \r\nAnotherField")
+	n, done, err = headers.Parse(data)
+	require.NoError(t, err)
+	require.NotNil(t, headers)
+	assert.Equal(t, "localhost:42069,localhost:42068", headers.Get("Host"))
 	assert.False(t, done)
 }

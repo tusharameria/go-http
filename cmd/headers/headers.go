@@ -39,7 +39,11 @@ func (h *Headers) Get(name string) string {
 }
 
 func (h *Headers) Set(name, value string) {
-	h.header[strings.ToLower(name)] = value
+	name = strings.ToLower(name)
+	if v, ok := h.header[name]; ok {
+		value = fmt.Sprintf("%s,%s", v, value)
+	}
+	h.header[name] = value
 }
 
 func parseHeader(fieldLine []byte) (string, string, error) {
