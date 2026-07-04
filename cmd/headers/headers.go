@@ -23,27 +23,27 @@ func isToken(str []byte) bool {
 }
 
 type Headers struct {
-	header map[string]string
+	Header map[string]string
 }
 
 var rn = []byte("\r\n")
 
 func NewHeaders() *Headers {
 	return &Headers{
-		header: make(map[string]string),
+		Header: make(map[string]string),
 	}
 }
 
 func (h *Headers) Get(name string) string {
-	return h.header[strings.ToLower(name)]
+	return h.Header[strings.ToLower(name)]
 }
 
 func (h *Headers) Set(name, value string) {
 	name = strings.ToLower(name)
-	if v, ok := h.header[name]; ok {
+	if v, ok := h.Header[name]; ok {
 		value = fmt.Sprintf("%s,%s", v, value)
 	}
-	h.header[name] = value
+	h.Header[name] = value
 }
 
 func parseHeader(fieldLine []byte) (string, string, error) {
@@ -84,7 +84,7 @@ func (h *Headers) Parse(data []byte) (int, bool, error) {
 		}
 
 		if !isToken([]byte(fieldName)) {
-			return 0, false, fmt.Errorf("malformed header name")
+			return 0, false, fmt.Errorf("malformed Header name")
 		}
 
 		h.Set(fieldName, fieldValue)
