@@ -5,17 +5,22 @@ import (
 	"errors"
 	"fmt"
 	"io"
+
+	"github.com/tusharameria/go-http/cmd/headers"
 )
 
 type parserState string
 
 const (
-	StateInit parserState = "init"
-	StateDone parserState = "done"
+	StateInit    parserState = "init"
+	StateHeaders parserState = "headers"
+	StateDone    parserState = "done"
+	StateError   parserState = "error"
 )
 
 type Request struct {
 	RequestLine RequestLine
+	Headers     *headers.Headers
 	State       parserState
 }
 
@@ -25,8 +30,9 @@ type RequestLine struct {
 	Method        string
 }
 
-var ERROR_MALFORMED_REQUEST_LINE = fmt.Errorf("malformed request-line")
-var ERROR_UNSUPPORTED_HTTP_VERSION = fmt.Errorf("unsupported http version")
+var ErrorMalformedRequestLine = fmt.Errorf("malformed request-line")
+var ErrorUnsupportedHttpVersion = fmt.Errorf("unsupported http version")
+var ErrorRequestInErrorState = fmt.Errorf("request in error state")
 var SEPARATOR = []byte("\r\n")
 
 func parseRequestLine(b []byte) (*RequestLine, int, error) {
@@ -40,14 +46,14 @@ func parseRequestLine(b []byte) (*RequestLine, int, error) {
 
 	parts := bytes.Split(startLine, []byte(" "))
 	if len(parts) != 3 {
-		return nil, 0, ERROR_MALFORMED_REQUEST_LINE
+		return nil, 0, ErrorMalformedRequestLine
 	}
 
 	httpVersionParts := bytes.Split(parts[2], []byte("/"))
 	if len(httpVersionParts) != 2 ||
 		string(httpVersionParts[0]) != "HTTP" ||
 		string(httpVersionParts[1]) != "1.1" {
-		return nil, 0, ERROR_UNSUPPORTED_HTTP_VERSION
+		return nil, 0, ErrorUnsupportedHttpVersion
 	}
 
 	rl := &RequestLine{
@@ -61,20 +67,52 @@ func parseRequestLine(b []byte) (*RequestLine, int, error) {
 
 func newRequest() *Request {
 	return &Request{
-		State: StateInit,
+		State:   StateInit,
+		Headers: headers.NewHeaders(),
 	}
 }
 
-func (r *Request) parse(b []byte) (int, error) {
-	rl, readN, err := parseRequestLine(b)
-	if err != nil {
-		return 0, err
+func (r *Request) parse(data []byte) (int, error) {
+	read := 0
+
+outer:
+	for {
+		currentData := data[read:]
+		switch r.State {
+		case StateError:
+			return 0, ErrorRequestInErrorState
+		case StateInit:
+			rl, n, err := parseRequestLine(currentData)
+			if err != nil {
+				return 0, err
+			}
+			if n == 0 {
+				break outer
+			}
+			r.RequestLine = *rl
+			read += n
+			r.State = StateHeaders
+		case StateHeaders:
+			n, done, err := r.Headers.Parse(currentData)
+			if err != nil {
+				fmt.Println(err)
+				return 0, err
+			}
+
+			if n == 0 {
+				break outer
+			}
+			read += n
+			if done {
+				r.State = StateDone
+			}
+		case StateDone:
+			break outer
+		default:
+			panic("bad programmer!!!")
+		}
 	}
-	if readN != 0 {
-		r.RequestLine = *rl
-		r.State = StateDone
-	}
-	return 0, nil
+	return read, nil
 }
 
 func (r *Request) done() bool {
@@ -93,11 +131,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 				err,
 			)
 		}
-
 		buffLen += n
 		readN, newErr := request.parse(buff[:buffLen])
 		if newErr != nil {
-			return nil, err
+			return nil, newErr
 		}
 		copy(buff, buff[readN:buffLen])
 		buffLen -= readN

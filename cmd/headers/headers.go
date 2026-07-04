@@ -53,7 +53,7 @@ func parseHeader(fieldLine []byte) (string, string, error) {
 	}
 
 	fieldName, fieldValue := parts[0], parts[1]
-	if fieldName[0] == ' ' || fieldName[len(fieldName)-1] == ' ' {
+	if bytes.Contains(fieldName, []byte(" ")) {
 		return "", "", fmt.Errorf("malformed field-name")
 	}
 
