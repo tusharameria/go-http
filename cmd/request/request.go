@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 
 	"github.com/tusharameria/go-http/cmd/headers"
 )
@@ -14,15 +15,10 @@ type parserState string
 const (
 	StateInit    parserState = "init"
 	StateHeaders parserState = "headers"
+	StateBody    parserState = "body"
 	StateDone    parserState = "done"
 	StateError   parserState = "error"
 )
-
-type Request struct {
-	RequestLine RequestLine
-	Headers     *headers.Headers
-	State       parserState
-}
 
 type RequestLine struct {
 	HttpVersion   string
@@ -30,10 +26,43 @@ type RequestLine struct {
 	Method        string
 }
 
+type Request struct {
+	RequestLine RequestLine
+	Headers     *headers.Headers
+	state       parserState
+	Body        string
+}
+
+func getInt(headers *headers.Headers, name string, defaultValue int) int {
+	valueStr, exists := headers.Get(name)
+	if !exists {
+		return defaultValue
+	}
+	value, err := strconv.Atoi(valueStr)
+	if err != nil {
+		return defaultValue
+	}
+	return value
+}
+
+func newRequest() *Request {
+	return &Request{
+		state:   StateInit,
+		Headers: headers.NewHeaders(),
+	}
+}
+
 var ErrorMalformedRequestLine = fmt.Errorf("malformed request-line")
 var ErrorUnsupportedHttpVersion = fmt.Errorf("unsupported http version")
+var ErrorMalformedContentLength = fmt.Errorf("malformed content-length")
+var ErrorContentLengthMismatch = fmt.Errorf("content length mismatch")
 var ErrorRequestInErrorState = fmt.Errorf("request in error state")
 var SEPARATOR = []byte("\r\n")
+var ContentLength = "Content-Length"
+
+// func parseBody(b []byte, contentLength int) ([]byte, int, error) {
+
+// }
 
 func parseRequestLine(b []byte) (*RequestLine, int, error) {
 	idx := bytes.Index(b, SEPARATOR)
@@ -65,49 +94,67 @@ func parseRequestLine(b []byte) (*RequestLine, int, error) {
 	return rl, read, nil
 }
 
-func newRequest() *Request {
-	return &Request{
-		State:   StateInit,
-		Headers: headers.NewHeaders(),
-	}
+func (r *Request) hasBody() bool {
+	// TODO : Implement chunk
+	length := getInt(r.Headers, ContentLength, 0)
+	return length != 0
 }
 
 func (r *Request) parse(data []byte) (int, error) {
 	read := 0
-
-outer:
+dance:
 	for {
 		currentData := data[read:]
-		switch r.State {
+		if len(currentData) == 0 {
+			break dance
+		}
+		switch r.state {
 		case StateError:
 			return 0, ErrorRequestInErrorState
 		case StateInit:
 			rl, n, err := parseRequestLine(currentData)
 			if err != nil {
+				r.state = StateError
 				return 0, err
 			}
 			if n == 0 {
-				break outer
+				break dance
 			}
 			r.RequestLine = *rl
 			read += n
-			r.State = StateHeaders
+			r.state = StateHeaders
 		case StateHeaders:
 			n, done, err := r.Headers.Parse(currentData)
 			if err != nil {
-				fmt.Println(err)
+				r.state = StateError
 				return 0, err
 			}
-
 			if n == 0 {
-				break outer
+				break dance
 			}
 			read += n
 			if done {
-				r.State = StateDone
+				if r.hasBody() {
+					r.state = StateBody
+				} else {
+					r.state = StateDone
+				}
+			}
+		case StateBody:
+			length := getInt(r.Headers, ContentLength, 0)
+			if length == 0 {
+				panic("chunk not implemented")
+			}
+
+			remaining := min(length-len(r.Body), len(currentData))
+			r.Body += string(currentData[:remaining])
+			read += remaining
+
+			if len(r.Body) == length {
+				r.state = StateDone
 			}
 		case StateDone:
-			break outer
+			break dance
 		default:
 			panic("bad programmer!!!")
 		}
@@ -116,7 +163,7 @@ outer:
 }
 
 func (r *Request) done() bool {
-	return r.State == StateDone
+	return r.state == StateDone
 }
 
 func RequestFromReader(reader io.Reader) (*Request, error) {
@@ -125,7 +172,7 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 	buffLen := 0
 	for !request.done() {
 		n, err := reader.Read(buff[buffLen:])
-		if err != nil && err != io.EOF {
+		if err != nil {
 			return nil, errors.Join(
 				fmt.Errorf("unable to reader.Read"),
 				err,
@@ -139,9 +186,10 @@ func RequestFromReader(reader io.Reader) (*Request, error) {
 		copy(buff, buff[readN:buffLen])
 		buffLen -= readN
 
-		if err == io.EOF {
-			break
-		}
+		// if err == io.EOF {
+		// 	fmt.Println("EOF")
+		// 	break
+		// }
 	}
 
 	return request, nil
