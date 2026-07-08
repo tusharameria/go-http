@@ -23,13 +23,15 @@ func main() {
 		if err != nil {
 			log.Println("error in RequestFromReader", "err", err)
 		}
-		fmt.Println("Request Line :")
-		fmt.Printf("- Method: %v\n", r.RequestLine.Method)
-		fmt.Printf("- Target: %v\n", r.RequestLine.RequestTarget)
-		fmt.Printf("- Version: %v\n", r.RequestLine.HttpVersion)
-		fmt.Println("Headers :")
-		for k, v := range r.Headers.Header {
-			fmt.Printf("- %v: %v\n", k, v)
-		}
+
+		fmt.Printf("Request line:\n")
+		fmt.Printf("- Method: %s\n", r.RequestLine.Method)
+		fmt.Printf("- Target: %s\n", r.RequestLine.RequestTarget)
+		fmt.Printf("- Version: %s\n", r.RequestLine.HttpVersion)
+
+		fmt.Printf("Headers:\n")
+		r.Headers.ForEach(func(k, v string) {
+			fmt.Printf("- %s: %s\n", k, v)
+		})
 	}
 }
