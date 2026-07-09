@@ -7,7 +7,7 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/tusharameria/go-http/cmd/headers"
+	"github.com/tusharameria/go-http/internal/headers"
 )
 
 type parserState string

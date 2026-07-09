@@ -5,7 +5,7 @@ import (
 	"log"
 	"net"
 
-	"github.com/tusharameria/go-http/cmd/request"
+	"github.com/tusharameria/go-http/internal/request"
 )
 
 func main() {
