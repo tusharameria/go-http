@@ -13,6 +13,13 @@ func main() {
 	}
 	defer listener.Close()
 
-	fmt.Printf("Addr : %s\n", listener.Addr())
-	fmt.Println(listener)
+	fmt.Printf("Listening on Addr : %s\n", listener.Addr())
+
+	conn, err := listener.Accept()
+	if err != nil {
+		log.Panic(err)
+	}
+	defer conn.Close()
+	fmt.Printf("Conn RemoteAddr : %s\n", conn.RemoteAddr())
+	fmt.Printf("Conn LocalAddr : %s\n", conn.LocalAddr())
 }
