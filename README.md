@@ -1,7 +1,7 @@
-# from TCP to HTTP
+# HTTP from scratch
 
 ## Run the tcp server
 
 ```bash
-nc 127.0.0.1 42069
+nc 127.0.0.1 8083
 ```
