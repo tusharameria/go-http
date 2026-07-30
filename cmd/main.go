@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"net"
@@ -20,14 +21,20 @@ func main() {
 		log.Panic(err)
 	}
 	defer conn.Close()
-	fmt.Printf("Conn Type : %T\n", conn)
-	fmt.Printf("Conn RemoteAddr : %s\n", conn.RemoteAddr())
-	fmt.Printf("Conn LocalAddr : %s\n", conn.LocalAddr())
 
 	buffer := make([]byte, 1024)
-	n, err := conn.Read(buffer)
-	if err != nil {
-		fmt.Println(err)
+	for {
+		_, err := conn.Read(buffer)
+		if err != nil {
+			break
+		}
+		newLineIdx := bytes.LastIndex(buffer, []byte("\n"))
+		if newLineIdx == -1 {
+			continue
+		}
+		msg := string(buffer[:newLineIdx])
+		fmt.Printf("Msg Received : %s\n", msg)
+
+		conn.Write([]byte(fmt.Sprintf("Response from server : Hey you sent us \"%s\"\n", msg)))
 	}
-	fmt.Printf("n : %d\n", n)
 }
