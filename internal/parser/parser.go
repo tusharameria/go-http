@@ -14,7 +14,8 @@ func (p *Parser) Feed(data []byte) [][]byte {
 	for {
 		firstIdx := bytes.IndexByte(p.aggregator, '\n')
 		if firstIdx >= 0 {
-			res = append(res, p.aggregator[:firstIdx])
+			msg := p.aggregator[:firstIdx]
+			res = append(res, msg)
 		} else {
 			break
 		}
