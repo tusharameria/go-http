@@ -6,6 +6,22 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestParserFeed_EmptyMessage(t *testing.T) {
+	p := &Parser{}
+
+	msgs := p.Feed([]byte{})
+	require.Empty(t, msgs)
+	require.Empty(t, p.aggregator)
+}
+
+func TestParserFeed_IncompleteMessage(t *testing.T) {
+	p := &Parser{}
+
+	msgs := p.Feed([]byte("Hello"))
+	require.Empty(t, msgs)
+	require.Equal(t, p.aggregator, []byte("Hello"))
+}
+
 func TestParserFeed_MessageSplitAcrossFeeds(t *testing.T) {
 	p := &Parser{}
 
