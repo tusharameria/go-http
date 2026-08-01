@@ -7,8 +7,9 @@ import (
 )
 
 func TestParseRequestLine(t *testing.T) {
-	raw := []byte("GET / HTTP/1.1\r\n")
-	req, err := Parse(raw)
+	raw := []byte("GET / HTTP/1.1")
+	p := &Parser{}
+	req, err := p.parseRequestLine(raw)
 
 	require.NoError(t, err)
 	require.Equal(t, "GET", req.Method)
@@ -18,7 +19,8 @@ func TestParseRequestLine(t *testing.T) {
 
 func TestParseRequestLine_Invalid(t *testing.T) {
 	raw := []byte("GET /\r\n")
-	req, err := Parse(raw)
+	p := &Parser{}
+	req, err := p.Parse(raw)
 
 	require.Error(t, err)
 	require.Nil(t, req)
@@ -32,7 +34,8 @@ func TestParseRequest_WithHeaders(t *testing.T) {
 			"\r\n",
 	)
 
-	req, err := Parse(raw)
+	p := &Parser{}
+	req, err := p.Parse(raw)
 
 	require.NoError(t, err)
 	require.Equal(t, "localhost", req.Headers["Host"])

@@ -6,7 +6,24 @@ import (
 	"strings"
 )
 
-func Parse(data []byte) (*Request, error) {
+type Parser struct {
+	requestLine RequestLine
+}
+
+func (p *Parser) parseRequestLine(line []byte) (RequestLine, error) {
+	rl := RequestLine{}
+	rlParts := bytes.Split(line, []byte(" "))
+	if len(rlParts) != 3 {
+		return rl, fmt.Errorf("invalid request line")
+	}
+	rl.Method = string(rlParts[0])
+	rl.Path = string(rlParts[1])
+	rl.Version = string(rlParts[2])
+
+	return rl, nil
+}
+
+func (p *Parser) Parse(data []byte) (*Request, error) {
 	requesLine, restOfData, found := bytes.Cut(data, []byte("\r\n"))
 	if !found {
 		return nil, fmt.Errorf("request line not ended")
