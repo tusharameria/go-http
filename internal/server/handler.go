@@ -16,10 +16,10 @@ func (s *Server) handleConnection(conn net.Conn) error {
 		if err != nil {
 			return err
 		}
-		res := p.Feed(buffer[:n])
-		for _, line := range res {
-			fmt.Printf("Received : %s\n", line)
-			conn.Write([]byte(fmt.Sprintf("You sent : %s\n", line)))
+		msgs := p.Feed(buffer[:n])
+		for _, msg := range msgs {
+			fmt.Printf("Received : %s\n", msg)
+			conn.Write([]byte(fmt.Sprintf("You sent : %s\n", msg)))
 		}
 	}
 }
