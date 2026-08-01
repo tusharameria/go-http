@@ -23,3 +23,18 @@ func TestParseRequestLine_Invalid(t *testing.T) {
 	require.Error(t, err)
 	require.Nil(t, req)
 }
+
+func TestParseRequest_WithHeaders(t *testing.T) {
+	raw := []byte(
+		"GET / HTTP/1.1\r\n" +
+			"Host: localhost\r\n" +
+			"User-Agent: curl\r\n" +
+			"\r\n",
+	)
+
+	req, err := Parse(raw)
+
+	require.NoError(t, err)
+	require.Equal(t, "localhost", req.Headers["Host"])
+	require.Equal(t, "curl", req.Headers["User-Agent"])
+}
