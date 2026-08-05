@@ -38,6 +38,12 @@ func TestParseRequest_WithHeaders(t *testing.T) {
 	req, err := p.Parse(raw)
 
 	require.NoError(t, err)
-	require.Equal(t, "localhost", req.Headers["Host"])
-	require.Equal(t, "curl", req.Headers["User-Agent"])
+	require.Equal(t, 1, len(req.Headers.Values("Host")))
+	require.Equal(t, true, req.Headers.Has("Host"))
+	require.Equal(t, true, req.Headers.Has("host"))
+	require.Equal(t, "localhost", req.Headers.Get("Host"))
+	require.Equal(t, 1, len(req.Headers.Values("User-Agent")))
+	require.Equal(t, true, req.Headers.Has("User-Agent"))
+	require.Equal(t, true, req.Headers.Has("UsEr-AgeNt"))
+	require.Equal(t, "curl", req.Headers.Get("User-Agent"))
 }

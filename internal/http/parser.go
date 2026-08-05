@@ -6,37 +6,25 @@ import (
 	"strings"
 )
 
-type Parser struct {
-	requestLine RequestLine
-}
+type Parser struct{}
 
 func (p *Parser) parseRequestLine(line []byte) (RequestLine, error) {
-	rl := RequestLine{}
+	requestLine := RequestLine{}
 	rlParts := bytes.Split(line, []byte(" "))
 	if len(rlParts) != 3 {
-		return rl, fmt.Errorf("invalid request line")
+		return requestLine, fmt.Errorf("invalid request line")
 	}
-	rl.Method = string(rlParts[0])
-	rl.Path = string(rlParts[1])
-	rl.Version = string(rlParts[2])
+	requestLine.Method = string(rlParts[0])
+	requestLine.Path = string(rlParts[1])
+	requestLine.Version = string(rlParts[2])
 
-	return rl, nil
+	return requestLine, nil
 }
 
-func (p *Parser) Parse(data []byte) (*Request, error) {
-	requesLine, restOfData, found := bytes.Cut(data, []byte("\r\n"))
-	if !found {
-		return nil, fmt.Errorf("request line not ended")
-	}
-
-	rlParts := bytes.Split(requesLine, []byte(" "))
-	if len(rlParts) != 3 {
-		return nil, fmt.Errorf("invalid request line")
-	}
-
-	headers := make(map[string]string)
-	if len(restOfData) != 0 {
-		headerParts := bytes.Split(restOfData, []byte("\r\n"))
+func (p *Parser) parseHeaders(line []byte) (*Headers, error) {
+	headers := NewHeaders()
+	if len(line) != 0 {
+		headerParts := bytes.Split(line, []byte("\r\n"))
 		lenHeadParts := len(headerParts)
 		if len(headerParts[lenHeadParts-1]) != 0 || len(headerParts[lenHeadParts-2]) != 0 {
 			return nil, fmt.Errorf("headers not ended properly")
@@ -48,14 +36,33 @@ func (p *Parser) Parse(data []byte) (*Request, error) {
 			if len(headerLineParts) != 2 {
 				return nil, fmt.Errorf("invalid header line")
 			}
-			headers[strings.TrimSpace(string(headerLineParts[0]))] = strings.TrimSpace(string(headerLineParts[1]))
+			key := strings.TrimSpace(string(headerLineParts[0]))
+			value := strings.TrimSpace(string(headerLineParts[1]))
+			headers.add(key, value)
 		}
 	}
 
+	return headers, nil
+}
+
+func (p *Parser) Parse(data []byte) (*Request, error) {
+	requesLineBytes, restOfData, found := bytes.Cut(data, []byte("\r\n"))
+	if !found {
+		return nil, fmt.Errorf("request line not ended")
+	}
+
+	requestLine, err := p.parseRequestLine(requesLineBytes)
+	if err != nil {
+		return nil, err
+	}
+
+	headers, err := p.parseHeaders(restOfData)
+	if err != nil {
+		return nil, err
+	}
+
 	return &Request{
-		Method:  string(rlParts[0]),
-		Path:    string(rlParts[1]),
-		Version: string(rlParts[2]),
-		Headers: headers,
+		RequestLine: requestLine,
+		Headers:     headers,
 	}, nil
 }
