@@ -8,7 +8,9 @@ import (
 
 func TestParseRequestLine(t *testing.T) {
 	raw := []byte("GET / HTTP/1.1")
-	p := &Parser{}
+	p := &Parser{
+		state: stateRequestLine,
+	}
 	req, err := p.parseRequestLine(raw)
 
 	require.NoError(t, err)
@@ -46,4 +48,43 @@ func TestParseRequest_WithHeaders(t *testing.T) {
 	require.Equal(t, true, req.Headers.Has("User-Agent"))
 	require.Equal(t, true, req.Headers.Has("UsEr-AgeNt"))
 	require.Equal(t, "curl", req.Headers.Get("User-Agent"))
+}
+
+func TestParserFeed_RequestLineComplete(t *testing.T) {
+	p := &Parser{
+		state: stateRequestLine,
+	}
+
+	err := p.Feed([]byte("GET /hello HTTP/1.1\r\n"))
+
+	require.NoError(t, err)
+	require.Equal(t, stateHeaders, p.state)
+	require.Equal(t, RequestLine{
+		Method:  "GET",
+		Path:    "/hello",
+		Version: "HTTP/1.1",
+	}, p.requestLine)
+	require.Empty(t, p.buf)
+}
+
+func TestParserFeed_RequestLineSplitAcrossFeeds(t *testing.T) {
+	p := &Parser{
+		state: stateRequestLine,
+	}
+
+	err := p.Feed([]byte("GET /hel"))
+	require.NoError(t, err)
+	require.Equal(t, stateRequestLine, p.state)
+	require.Empty(t, p.requestLine)
+	require.Equal(t, []byte("GET /hel"), p.buf)
+
+	err = p.Feed([]byte("lo HTTP/1.1\r\n"))
+	require.NoError(t, err)
+	require.Equal(t, stateHeaders, p.state)
+	require.Equal(t, RequestLine{
+		Method:  "GET",
+		Path:    "/hello",
+		Version: "HTTP/1.1",
+	}, p.requestLine)
+	require.Empty(t, p.buf)
 }

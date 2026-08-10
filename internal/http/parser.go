@@ -6,7 +6,37 @@ import (
 	"strings"
 )
 
-type Parser struct{}
+type parserState int
+
+const crlf = "\r\n"
+const (
+	stateRequestLine parserState = iota
+	stateHeaders
+)
+
+var crlfBytes = []byte(crlf)
+
+type Parser struct {
+	state       parserState
+	requestLine RequestLine
+	buf         []byte
+}
+
+func (p *Parser) Feed(data []byte) error {
+	p.buf = append(p.buf, data...)
+	idx := bytes.Index(p.buf, crlfBytes)
+	if idx == -1 {
+		return nil
+	}
+	requestLine, err := p.parseRequestLine(p.buf[:idx])
+	if err != nil {
+		return err
+	}
+	p.requestLine = requestLine
+	p.buf = p.buf[idx+len(crlfBytes):]
+	p.state = stateHeaders
+	return nil
+}
 
 func (p *Parser) parseRequestLine(line []byte) (RequestLine, error) {
 	requestLine := RequestLine{}
