@@ -113,3 +113,34 @@ func TestParserFeed_MultipleHeadersInSingleFeed(t *testing.T) {
 	require.Equal(t, "keep-alive", p.headers.Get("Connection"))
 	require.Empty(t, p.buf)
 }
+
+func TestParserFeed_NoBody(t *testing.T) {
+	p := NewParser()
+
+	err := p.Feed([]byte(
+		"GET / HTTP/1.1\r\n" +
+			"Host: localhost\r\n" +
+			"\r\n",
+	))
+
+	require.NoError(t, err)
+	require.Equal(t, bodyNone, p.bodyType)
+	require.Zero(t, p.bodyMetaData)
+	require.Equal(t, stateBody, p.state)
+}
+
+func TestParserFeed_ContentLength(t *testing.T) {
+	p := NewParser()
+
+	err := p.Feed([]byte(
+		"POST / HTTP/1.1\r\n" +
+			"Host: localhost\r\n" +
+			"Content-Length: 42\r\n" +
+			"\r\n",
+	))
+
+	require.NoError(t, err)
+	require.Equal(t, bodyContentLength, p.bodyType)
+	require.Equal(t, 42, p.bodyMetaData)
+	require.Equal(t, stateBody, p.state)
+}

@@ -3,31 +3,42 @@ package http
 import (
 	"bytes"
 	"fmt"
+	"strconv"
 	"strings"
 )
 
 type parserState int
+type bodyType int
 
+const contentLengthKey = "Content-Length"
 const crlf = "\r\n"
 const (
 	stateRequestLine parserState = iota
 	stateHeaders
 	stateBody
 )
+const (
+	bodyNone bodyType = iota
+	bodyContentLength
+	bodyChunked
+)
 
 var crlfBytes = []byte(crlf)
 
 type Parser struct {
-	state       parserState
-	requestLine RequestLine
-	headers     *Headers
-	buf         []byte
+	state        parserState
+	requestLine  RequestLine
+	headers      *Headers
+	bodyType     bodyType
+	bodyMetaData int
+	buf          []byte
 }
 
 func NewParser() *Parser {
 	return &Parser{
-		state:   stateRequestLine,
-		headers: NewHeaders(),
+		state:    stateRequestLine,
+		headers:  NewHeaders(),
+		bodyType: bodyNone,
 	}
 }
 
@@ -56,6 +67,9 @@ func (p *Parser) Feed(data []byte) error {
 			}
 
 			if idx == 0 {
+				if err := p.determineBody(); err != nil {
+					return err
+				}
 				p.buf = p.buf[idx+len(crlfBytes):]
 				p.state = stateBody
 			} else {
@@ -95,6 +109,22 @@ func (p *Parser) parseHeaderLine(line []byte) error {
 	key := strings.TrimSpace(string(headerLineParts[0]))
 	value := strings.TrimSpace(string(headerLineParts[1]))
 	p.headers.add(key, value)
+
+	return nil
+}
+
+func (p *Parser) determineBody() error {
+	if !p.headers.Has(contentLengthKey) {
+		p.bodyType = bodyNone
+		return nil
+	}
+
+	contentLengthValue, err := strconv.Atoi(p.headers.Get(contentLengthKey))
+	if err != nil {
+		return err
+	}
+	p.bodyType = bodyContentLength
+	p.bodyMetaData = contentLengthValue
 
 	return nil
 }
