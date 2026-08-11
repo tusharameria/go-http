@@ -16,6 +16,7 @@ const (
 	stateRequestLine parserState = iota
 	stateHeaders
 	stateBody
+	stateComplete
 )
 const (
 	bodyNone bodyType = iota
@@ -29,6 +30,7 @@ type Parser struct {
 	state        parserState
 	requestLine  RequestLine
 	headers      *Headers
+	body         []byte
 	bodyType     bodyType
 	bodyMetaData int
 	buf          []byte
@@ -80,7 +82,22 @@ func (p *Parser) Feed(data []byte) error {
 			}
 
 		case stateBody:
-			fmt.Println("unimplemented")
+			switch p.bodyType {
+			case bodyNone:
+				p.state = stateComplete
+				return nil
+
+			case bodyContentLength:
+				idx := min(p.bodyMetaData, len(p.buf))
+				p.body = append(p.body, p.buf[:idx]...)
+				p.buf = p.buf[idx:]
+				p.bodyMetaData -= idx
+				if p.bodyMetaData == 0 {
+					p.state = stateComplete
+					return nil
+				}
+			}
+
 			return nil
 		}
 	}

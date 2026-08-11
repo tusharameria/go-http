@@ -144,3 +144,60 @@ func TestParserFeed_ContentLength(t *testing.T) {
 	require.Equal(t, 42, p.bodyMetaData)
 	require.Equal(t, stateBody, p.state)
 }
+
+func TestParserFeed_ContentLengthBody(t *testing.T) {
+	p := NewParser()
+
+	err := p.Feed([]byte(
+		"POST / HTTP/1.1\r\n" +
+			"Content-Length: 11\r\n" +
+			"\r\n" +
+			"Hello World",
+	))
+
+	require.NoError(t, err)
+	require.Equal(t, stateComplete, p.state)
+	require.Equal(t, []byte("Hello World"), p.body)
+	require.Empty(t, p.buf)
+	require.Zero(t, p.bodyMetaData)
+}
+
+func TestParserFeed_ContentLengthBodySplitAcrossFeeds(t *testing.T) {
+	p := NewParser()
+
+	err := p.Feed([]byte(
+		"POST / HTTP/1.1\r\n" +
+			"Content-Length: 11\r\n" +
+			"\r\n" +
+			"Hello",
+	))
+
+	require.NoError(t, err)
+	require.Equal(t, stateBody, p.state)
+	require.Equal(t, []byte("Hello"), p.body)
+	require.Equal(t, 6, p.bodyMetaData)
+
+	err = p.Feed([]byte(" World"))
+
+	require.NoError(t, err)
+	require.Equal(t, stateComplete, p.state)
+	require.Equal(t, []byte("Hello World"), p.body)
+	require.Empty(t, p.buf)
+	require.Zero(t, p.bodyMetaData)
+}
+
+func TestParserFeed_ContentLengthBodyAndExtraData(t *testing.T) {
+	p := NewParser()
+
+	err := p.Feed([]byte(
+		"POST / HTTP/1.1\r\n" +
+			"Content-Length: 5\r\n" +
+			"\r\n" +
+			"HelloExtra",
+	))
+
+	require.NoError(t, err)
+	require.Equal(t, stateComplete, p.state)
+	require.Equal(t, []byte("Hello"), p.body)
+	require.Equal(t, []byte("Extra"), p.buf)
+}
