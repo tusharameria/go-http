@@ -12,6 +12,7 @@ const crlf = "\r\n"
 const (
 	stateRequestLine parserState = iota
 	stateHeaders
+	stateBody
 )
 
 var crlfBytes = []byte(crlf)
@@ -19,22 +20,57 @@ var crlfBytes = []byte(crlf)
 type Parser struct {
 	state       parserState
 	requestLine RequestLine
+	headers     *Headers
 	buf         []byte
+}
+
+func NewParser() *Parser {
+	return &Parser{
+		state:   stateRequestLine,
+		headers: NewHeaders(),
+	}
 }
 
 func (p *Parser) Feed(data []byte) error {
 	p.buf = append(p.buf, data...)
-	idx := bytes.Index(p.buf, crlfBytes)
-	if idx == -1 {
-		return nil
+
+	for len(p.buf) > 0 {
+		switch p.state {
+		case stateRequestLine:
+			idx := bytes.Index(p.buf, crlfBytes)
+			if idx == -1 {
+				return nil
+			}
+			requestLine, err := p.parseRequestLine(p.buf[:idx])
+			if err != nil {
+				return err
+			}
+			p.requestLine = requestLine
+			p.buf = p.buf[idx+len(crlfBytes):]
+			p.state = stateHeaders
+
+		case stateHeaders:
+			idx := bytes.Index(p.buf, crlfBytes)
+			if idx == -1 {
+				return nil
+			}
+
+			if idx == 0 {
+				p.buf = p.buf[idx+len(crlfBytes):]
+				p.state = stateBody
+			} else {
+				if err := p.parseHeaderLine(p.buf[:idx]); err != nil {
+					return err
+				}
+				p.buf = p.buf[idx+len(crlfBytes):]
+			}
+
+		case stateBody:
+			fmt.Println("unimplemented")
+			return nil
+		}
 	}
-	requestLine, err := p.parseRequestLine(p.buf[:idx])
-	if err != nil {
-		return err
-	}
-	p.requestLine = requestLine
-	p.buf = p.buf[idx+len(crlfBytes):]
-	p.state = stateHeaders
+
 	return nil
 }
 
@@ -51,48 +87,14 @@ func (p *Parser) parseRequestLine(line []byte) (RequestLine, error) {
 	return requestLine, nil
 }
 
-func (p *Parser) parseHeaders(line []byte) (*Headers, error) {
-	headers := NewHeaders()
-	if len(line) != 0 {
-		headerParts := bytes.Split(line, []byte("\r\n"))
-		lenHeadParts := len(headerParts)
-		if len(headerParts[lenHeadParts-1]) != 0 || len(headerParts[lenHeadParts-2]) != 0 {
-			return nil, fmt.Errorf("headers not ended properly")
-		}
-
-		for i := 0; i < lenHeadParts-2; i++ {
-			headerLine := headerParts[i]
-			headerLineParts := bytes.SplitN(headerLine, []byte(":"), 2)
-			if len(headerLineParts) != 2 {
-				return nil, fmt.Errorf("invalid header line")
-			}
-			key := strings.TrimSpace(string(headerLineParts[0]))
-			value := strings.TrimSpace(string(headerLineParts[1]))
-			headers.add(key, value)
-		}
+func (p *Parser) parseHeaderLine(line []byte) error {
+	headerLineParts := bytes.SplitN(line, []byte(":"), 2)
+	if len(headerLineParts) != 2 {
+		return fmt.Errorf("invalid header line")
 	}
+	key := strings.TrimSpace(string(headerLineParts[0]))
+	value := strings.TrimSpace(string(headerLineParts[1]))
+	p.headers.add(key, value)
 
-	return headers, nil
-}
-
-func (p *Parser) Parse(data []byte) (*Request, error) {
-	requesLineBytes, restOfData, found := bytes.Cut(data, []byte("\r\n"))
-	if !found {
-		return nil, fmt.Errorf("request line not ended")
-	}
-
-	requestLine, err := p.parseRequestLine(requesLineBytes)
-	if err != nil {
-		return nil, err
-	}
-
-	headers, err := p.parseHeaders(restOfData)
-	if err != nil {
-		return nil, err
-	}
-
-	return &Request{
-		RequestLine: requestLine,
-		Headers:     headers,
-	}, nil
+	return nil
 }
