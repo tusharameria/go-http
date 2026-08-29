@@ -44,20 +44,22 @@ func NewParser() *Parser {
 	}
 }
 
-func (p *Parser) Feed(data []byte) error {
+func (p *Parser) Feed(data []byte) (*Request, error) {
 	p.buf = append(p.buf, data...)
 
-	for len(p.buf) > 0 {
+	for {
 		switch p.state {
 		case stateRequestLine:
 			idx := bytes.Index(p.buf, crlfBytes)
 			if idx == -1 {
-				return nil
+				return nil, nil
 			}
+
 			requestLine, err := p.parseRequestLine(p.buf[:idx])
 			if err != nil {
-				return err
+				return nil, err
 			}
+
 			p.requestLine = requestLine
 			p.buf = p.buf[idx+len(crlfBytes):]
 			p.state = stateHeaders
@@ -65,44 +67,56 @@ func (p *Parser) Feed(data []byte) error {
 		case stateHeaders:
 			idx := bytes.Index(p.buf, crlfBytes)
 			if idx == -1 {
-				return nil
+				return nil, nil
 			}
 
 			if idx == 0 {
 				if err := p.determineBody(); err != nil {
-					return err
+					return nil, err
 				}
-				p.buf = p.buf[idx+len(crlfBytes):]
+
+				p.buf = p.buf[len(crlfBytes):]
 				p.state = stateBody
-			} else {
-				if err := p.parseHeaderLine(p.buf[:idx]); err != nil {
-					return err
-				}
-				p.buf = p.buf[idx+len(crlfBytes):]
+				continue
 			}
+
+			if err := p.parseHeaderLine(p.buf[:idx]); err != nil {
+				return nil, err
+			}
+
+			p.buf = p.buf[idx+len(crlfBytes):]
 
 		case stateBody:
 			switch p.bodyType {
 			case bodyNone:
 				p.state = stateComplete
-				return nil
 
 			case bodyContentLength:
+				if len(p.buf) == 0 {
+					return nil, nil
+				}
+
 				idx := min(p.bodyMetaData, len(p.buf))
+
 				p.body = append(p.body, p.buf[:idx]...)
 				p.buf = p.buf[idx:]
 				p.bodyMetaData -= idx
-				if p.bodyMetaData == 0 {
-					p.state = stateComplete
-					return nil
+
+				if p.bodyMetaData > 0 {
+					return nil, nil
 				}
+
+				p.state = stateComplete
 			}
 
-			return nil
+		case stateComplete:
+			return &Request{
+				requestLine: p.requestLine,
+				headers:     p.headers,
+				body:        p.body,
+			}, nil
 		}
 	}
-
-	return nil
 }
 
 func (p *Parser) parseRequestLine(line []byte) (RequestLine, error) {

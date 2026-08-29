@@ -20,7 +20,7 @@ func TestParseRequestLine(t *testing.T) {
 func TestParserFeed_RequestLineComplete(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte("GET /hello HTTP/1.1\r\n"))
+	_, err := p.Feed([]byte("GET /hello HTTP/1.1\r\n"))
 
 	require.NoError(t, err)
 	require.Equal(t, stateHeaders, p.state)
@@ -35,13 +35,13 @@ func TestParserFeed_RequestLineComplete(t *testing.T) {
 func TestParserFeed_RequestLineSplitAcrossFeeds(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte("GET /hel"))
+	_, err := p.Feed([]byte("GET /hel"))
 	require.NoError(t, err)
 	require.Equal(t, stateRequestLine, p.state)
 	require.Empty(t, p.requestLine)
 	require.Equal(t, []byte("GET /hel"), p.buf)
 
-	err = p.Feed([]byte("lo HTTP/1.1\r\n"))
+	_, err = p.Feed([]byte("lo HTTP/1.1\r\n"))
 	require.NoError(t, err)
 	require.Equal(t, stateHeaders, p.state)
 	require.Equal(t, RequestLine{
@@ -55,7 +55,7 @@ func TestParserFeed_RequestLineSplitAcrossFeeds(t *testing.T) {
 func TestParserFeed_HeadersComplete(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte(
+	_, err := p.Feed([]byte(
 		"GET / HTTP/1.1\r\n" +
 			"Host: localhost\r\n" +
 			"Content-Type: application/json\r\n" +
@@ -73,7 +73,7 @@ func TestParserFeed_HeadersComplete(t *testing.T) {
 func TestParserFeed_HeaderSplitAcrossFeeds(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte(
+	_, err := p.Feed([]byte(
 		"GET / HTTP/1.1\r\n" +
 			"Host: local",
 	))
@@ -81,7 +81,7 @@ func TestParserFeed_HeaderSplitAcrossFeeds(t *testing.T) {
 	require.Equal(t, stateHeaders, p.state)
 	require.Equal(t, []byte("Host: local"), p.buf)
 
-	err = p.Feed([]byte(
+	_, err = p.Feed([]byte(
 		"host\r\n" +
 			"Content-Type: application/json\r\n" +
 			"\r\n",
@@ -97,7 +97,7 @@ func TestParserFeed_HeaderSplitAcrossFeeds(t *testing.T) {
 func TestParserFeed_MultipleHeadersInSingleFeed(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte(
+	_, err := p.Feed([]byte(
 		"GET / HTTP/1.1\r\n" +
 			"Host: localhost\r\n" +
 			"Accept: application/json\r\n" +
@@ -117,7 +117,7 @@ func TestParserFeed_MultipleHeadersInSingleFeed(t *testing.T) {
 func TestParserFeed_NoBody(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte(
+	_, err := p.Feed([]byte(
 		"GET / HTTP/1.1\r\n" +
 			"Host: localhost\r\n" +
 			"\r\n",
@@ -132,7 +132,7 @@ func TestParserFeed_NoBody(t *testing.T) {
 func TestParserFeed_ContentLength(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte(
+	_, err := p.Feed([]byte(
 		"POST / HTTP/1.1\r\n" +
 			"Host: localhost\r\n" +
 			"Content-Length: 42\r\n" +
@@ -148,7 +148,7 @@ func TestParserFeed_ContentLength(t *testing.T) {
 func TestParserFeed_ContentLengthBody(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte(
+	_, err := p.Feed([]byte(
 		"POST / HTTP/1.1\r\n" +
 			"Content-Length: 11\r\n" +
 			"\r\n" +
@@ -165,7 +165,7 @@ func TestParserFeed_ContentLengthBody(t *testing.T) {
 func TestParserFeed_ContentLengthBodySplitAcrossFeeds(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte(
+	_, err := p.Feed([]byte(
 		"POST / HTTP/1.1\r\n" +
 			"Content-Length: 11\r\n" +
 			"\r\n" +
@@ -177,7 +177,7 @@ func TestParserFeed_ContentLengthBodySplitAcrossFeeds(t *testing.T) {
 	require.Equal(t, []byte("Hello"), p.body)
 	require.Equal(t, 6, p.bodyMetaData)
 
-	err = p.Feed([]byte(" World"))
+	_, err = p.Feed([]byte(" World"))
 
 	require.NoError(t, err)
 	require.Equal(t, stateComplete, p.state)
@@ -189,7 +189,7 @@ func TestParserFeed_ContentLengthBodySplitAcrossFeeds(t *testing.T) {
 func TestParserFeed_ContentLengthBodyAndExtraData(t *testing.T) {
 	p := NewParser()
 
-	err := p.Feed([]byte(
+	_, err := p.Feed([]byte(
 		"POST / HTTP/1.1\r\n" +
 			"Content-Length: 5\r\n" +
 			"\r\n" +
