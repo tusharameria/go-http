@@ -63,7 +63,7 @@ func TestParserFeed_HeadersComplete(t *testing.T) {
 	))
 
 	require.NoError(t, err)
-	require.Equal(t, stateBody, p.state)
+	require.Equal(t, stateComplete, p.state)
 
 	require.Equal(t, "localhost", p.headers.Get("Host"))
 	require.Equal(t, "application/json", p.headers.Get("Content-Type"))
@@ -87,7 +87,7 @@ func TestParserFeed_HeaderSplitAcrossFeeds(t *testing.T) {
 			"\r\n",
 	))
 	require.NoError(t, err)
-	require.Equal(t, stateBody, p.state)
+	require.Equal(t, stateComplete, p.state)
 
 	require.Equal(t, "localhost", p.headers.Get("Host"))
 	require.Equal(t, "application/json", p.headers.Get("Content-Type"))
@@ -106,7 +106,7 @@ func TestParserFeed_MultipleHeadersInSingleFeed(t *testing.T) {
 	))
 
 	require.NoError(t, err)
-	require.Equal(t, stateBody, p.state)
+	require.Equal(t, stateComplete, p.state)
 
 	require.Equal(t, "localhost", p.headers.Get("Host"))
 	require.Equal(t, "application/json", p.headers.Get("Accept"))
@@ -126,7 +126,7 @@ func TestParserFeed_NoBody(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, bodyNone, p.bodyType)
 	require.Zero(t, p.bodyMetaData)
-	require.Equal(t, stateBody, p.state)
+	require.Equal(t, stateComplete, p.state)
 }
 
 func TestParserFeed_ContentLength(t *testing.T) {
@@ -200,4 +200,87 @@ func TestParserFeed_ContentLengthBodyAndExtraData(t *testing.T) {
 	require.Equal(t, stateComplete, p.state)
 	require.Equal(t, []byte("Hello"), p.body)
 	require.Equal(t, []byte("Extra"), p.buf)
+}
+
+func TestParserFeed_ReturnsRequestWithoutBody(t *testing.T) {
+	p := NewParser()
+
+	request, err := p.Feed([]byte(
+		"GET /hello HTTP/1.1\r\n" +
+			"Host: localhost\r\n" +
+			"Accept: */*\r\n" +
+			"\r\n",
+	))
+
+	require.NoError(t, err)
+	require.NotNil(t, request)
+	require.Equal(t, "GET", request.requestLine.Method)
+	require.Equal(t, "/hello", request.requestLine.Path)
+	require.Equal(t, "HTTP/1.1", request.requestLine.Version)
+	require.Equal(t, "localhost", request.headers.Get("Host"))
+	require.Equal(t, "*/*", request.headers.Get("Accept"))
+	require.Empty(t, request.body)
+	require.Equal(t, stateComplete, p.state)
+}
+
+func TestParserFeed_ReturnsRequestWithBody(t *testing.T) {
+	p := NewParser()
+
+	request, err := p.Feed([]byte(
+		"POST /hello HTTP/1.1\r\n" +
+			"Host: localhost\r\n" +
+			"Content-Type: text/plain\r\n" +
+			"Content-Length: 11\r\n" +
+			"\r\n" +
+			"Hello World",
+	))
+
+	require.NoError(t, err)
+	require.NotNil(t, request)
+	require.Equal(t, "POST", request.requestLine.Method)
+	require.Equal(t, "/hello", request.requestLine.Path)
+	require.Equal(t, "localhost", request.headers.Get("Host"))
+	require.Equal(t, "text/plain", request.headers.Get("Content-Type"))
+	require.Equal(t, []byte("Hello World"), request.body)
+	require.Equal(t, stateComplete, p.state)
+}
+
+func TestParserFeed_ReturnsRequestWhenBodyIsSplit(t *testing.T) {
+	p := NewParser()
+
+	request, err := p.Feed([]byte(
+		"POST /hello HTTP/1.1\r\n" +
+			"Content-Length: 11\r\n" +
+			"\r\n" +
+			"Hello",
+	))
+
+	require.NoError(t, err)
+	require.Nil(t, request)
+	require.Equal(t, stateBody, p.state)
+
+	request, err = p.Feed([]byte(" World"))
+
+	require.NoError(t, err)
+	require.NotNil(t, request)
+	require.Equal(t, []byte("Hello World"), request.body)
+	require.Equal(t, stateComplete, p.state)
+}
+
+func TestParserFeed_PreservesDataAfterRequest(t *testing.T) {
+	p := NewParser()
+
+	request, err := p.Feed([]byte(
+		"POST /hello HTTP/1.1\r\n" +
+			"Content-Length: 5\r\n" +
+			"\r\n" +
+			"Hello" +
+			"NEXT",
+	))
+
+	require.NoError(t, err)
+	require.NotNil(t, request)
+	require.Equal(t, []byte("Hello"), request.body)
+	require.Equal(t, []byte("NEXT"), p.buf)
+	require.Equal(t, stateComplete, p.state)
 }
