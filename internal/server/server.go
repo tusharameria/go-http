@@ -1,6 +1,9 @@
 package server
 
-import "net"
+import (
+	"fmt"
+	"net"
+)
 
 type Server struct {
 	listener net.Listener
@@ -23,11 +26,16 @@ func NewWithListener(listener net.Listener) *Server {
 }
 
 func (s *Server) Serve() error {
-	conn, err := s.listener.Accept()
-	if err != nil {
-		return err
-	}
-	defer conn.Close()
+	for {
+		conn, err := s.listener.Accept()
+		if err != nil {
+			return err
+		}
 
-	return s.handleConnection(conn)
+		go func() {
+			if err := s.handleConnection(conn); err != nil {
+				fmt.Println(err)
+			}
+		}()
+	}
 }
